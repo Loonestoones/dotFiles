@@ -1,0 +1,18 @@
+[font]
+size = 20.0
+
+[font.normal]
+family = "Terminess Nerd Font"
+style = "Regular"
+
+[font.bold]
+family = "Terminess Nerd Font"
+style = "Bold"
+
+[font.italic]
+family = "Terminess Nerd Font"
+style = "Italic"
+
+[terminal.shell]
+program = "powershell.exe"
+args = ["-NoExit", "-Command", "Set-Location 'C:\\Users\\kevin\\Documents\\cpp\\Vulkan-api-tutorial'"]
