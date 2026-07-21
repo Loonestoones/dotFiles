@@ -1,0 +1,24 @@
+---
+description: Customer ICC motor DAC freshness — age from last RX peek, not take-clear
+alwaysApply: true
+---
+
+# ICC freshness (motor DAC) — lesson 2026-07-20
+
+## Symptom
+
+AO square-waved mid↔command every ~100 ms while UART still showed correct stick µs.
+
+## Cause
+
+Staleness used **time since last take** (take cleared `valid`). If the CM4 loop missed takes for ~`CUST_ICC_MOTOR_DAC_MAX_AGE_MS`, CM4 forced mid even though the handler kept receiving packets and latched commands looked fine.
+
+## Fix (keep)
+
+1. **Peek** latest motor slot; do not clear on read for age purposes (`has_data` + `rx_tick_ms` on store).
+2. Age = `now - slot.rx_tick_ms` (last **RX** in handler).
+3. Motor max age **300 ms** (was 100; steer uses 500 ms) — both `cust_icc.h`.
+
+## Rule
+
+For cyclic Customer ICC commands: freshness = **last receive stamp**, not last consumer drain. Timeout ≫ send period and tolerant of CM4 load (Log15 / Log18 B+A).

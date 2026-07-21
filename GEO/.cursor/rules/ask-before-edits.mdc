@@ -1,0 +1,34 @@
+---
+description: Always ask user permission before creating or editing any files
+alwaysApply: true
+---
+
+# Ask before creating or editing files
+
+## Rule
+
+**Do not create, edit, or delete files** in this workspace unless:
+
+1. The user **explicitly asked** for that change in the current message, or
+2. You **asked first** and the user **approved**
+
+This applies to **all** paths: source, headers, configs, docs, scripts, and `.cursor/` rules.
+
+## What to do instead
+
+- **Explain** code, architecture, and migration mapping in chat
+- **Propose** specific file changes and wait for approval
+- **Read and search** freely without permission
+
+## When asking
+
+State clearly:
+
+- Which file(s) would change
+- What the change is for
+- Whether it is create vs edit vs delete
+
+## Exceptions
+
+- **Reading** files and **running read-only** commands (grep, ls, git status) — no permission needed
+- If the user says “go ahead”, “yes”, or gives an explicit edit instruction — proceed for that scope only

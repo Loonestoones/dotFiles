@@ -1,0 +1,57 @@
+---
+description: Port OPS_ZF on linked NewBoard firmware now; design for newer libops upgrade later
+alwaysApply: true
+---
+
+# Current-build-first porting strategy
+
+## Active target (now)
+
+Work against **linked firmware today** — not the incoming OPS build.
+
+| Label | Path | Use |
+|-------|------|-----|
+| **CURRENT (compile & flash)** | `NewBoard/MFCB_BASE/CM7/OPS_Lib/` (+ CM4 mirror) | Headers + `libops.a` linked in Cube projects |
+| **NEWER (preview only)** | `NewBoard/Newer_build_includes/include/` | Plan APIs and EEPROM layout; **do not require these headers to compile** until new library arrives |
+
+The newer build may take a while. **Default:** implement and test on CURRENT; treat NEWER as the documented upgrade path.
+
+## Design for easy upgrade to NEWER
+
+When writing Customer code, plans, or bench steps:
+
+1. **Prefer OPS APIs in Customer** — `settings_load_raw`, `uart_send_ctrl`, `network_send`, `DAC_OutputVoltage`, etc. (supplier `how_to_use_customer_folder.txt`). Direct HAL (`HAL_UART_*`, `huart6`, …) is allowed in product logic when the OPS API can't do the job (bench-proven gap, e.g. Log4/Log5 UART6 SBUS) — no longer a hard ban. **Whenever proposing or writing HAL-level code, name the OPS API that would normally cover it (or that NEWER adds) and why it doesn't fit here**, so the gap and the upgrade path stay visible instead of silently bypassed.
+
+2. **Thin adapters for gaps** — Where CURRENT lacks an API (e.g. SBUS translator), isolate behind a small module:
+   - Example: `rc_input_get_sticks()` / `rc_input_init()` in Customer (or one `.c` file).
+   - **Now:** interim implementation (EEPROM UART config + minimal decode **only if unavoidable**, clearly marked temporary).
+   - **Later:** swap body to `sbus_shared_read()` / `sbus_translator_ctrl()` without rewriting the state machine.
+
+3. **EEPROM that survives upgrade** — Prefer settings blocks that exist on both builds with the same wire format (e.g. `BLOCK_UART6` 41-byte `uart_config_t`). Pre-configure UART for SBUS line params on CURRENT so NEWER library + translator can reuse them. **CURRENT web cannot set 100k baud** — approved workaround: hardcode SBUS `uart_config_t` in **CM4** Customer adapter (`rc_input_init()`); optional `settings_save_raw(BLOCK_UART6)` once. See `.cursor/Logs/Log1-UART.md`.
+
+4. **No newer-only `#include` in shippable code** — Do not pull `Middleware/SBUS/*`, `sbus_translator_config.h`, etc. into builds that link CURRENT `libops.a`. Use comments, `.cursor` logs, or `#if 0` stubs documenting the NEWER swap.
+
+5. **Semantic names over raw indices** — In Customer, read `steer`, `motor_port`, `take_control` (or translator field names in comments) rather than scattering `pwmValues[3]`-style magic numbers — eases mapping to `sbus_shared_snapshot_t` fields later.
+
+6. **Feature flags / compile gates** — If a temporary path is needed (interim SBUS decode), gate with one macro (e.g. `RC_INPUT_USE_OPS_TRANSLATOR` default 0) so flipping to NEWER is a single change + library swap.
+
+7. **Reference NEWER in chat and logs** — When proposing code, note “CURRENT now / NEWER when lib arrives” (see `newboard-knowledge-graph.mdc` mapping table).
+
+## What CURRENT vs NEWER implies (quick)
+
+| Area | CURRENT (work here now) | NEWER (defer until new `libops.a`) |
+|------|-------------------------|-------------------------------------|
+| UART1/6/7 roles | **UART1** = debug @ 3.3 V; **UART6** = SBUS RX; **UART7** = SBUS TX mirror @ 3.3 V (→ 5 V via `UART_SetVoltage` on 6/7) | Translator inst1→UART6, inst2→UART7 |
+| UART SBUS line | Hardcode `uart_config_t` on **UART6 RX + UART7 TX** in CM4 Customer | `uart_config_apply_preset_sbus()` + web preset |
+| Debug consoles | **UART1** @ 115200 — both cores (`CM4/CM7_INIT_DEBUG_UART` → `&huart1`) | Same target map |
+| SBUS decode / sticks | Interim `rc_input_*` on CM4 init + shared RX; **no long-term DIY decode** | `sbus_translator_ctrl`, `sbus_shared_read` |
+| Network / ROC | `network_functions.h`, IP channels | Same + optional `network_crypto` |
+| DAC / motors | `DAC_OutputVoltage` | Same |
+
+## Logging decisions
+
+Record bench results and interim choices in `.cursor/Logs/` (e.g. `Log1-UART.md`) — goal / method / result — so upgrade work picks up cleanly.
+
+## User intent (2026-07-01)
+
+Proceed with NewBoard **current firmware** for incremental OPS_ZF porting; structure all hints and code so adapting to the **newer build** is mostly adapter swap + library/header update, not a rewrite.

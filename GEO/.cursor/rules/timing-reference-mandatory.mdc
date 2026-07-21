@@ -1,0 +1,47 @@
+# Timing Reference: Mandatory Consultation
+
+## Rule
+
+**Before** writing, modifying, or reviewing any timing-sensitive code:
+
+1. **Read** `.cursor/Logs/Log15-System-Timing-Reference.md` in full
+2. **Check** for conflicts with existing rates, timeouts, and intervals
+3. **Update** Log15 when adding new timing constraints
+4. **Cross-reference** related systems (e.g., if changing send rate, check receiver timeout)
+
+## Timing-Sensitive Code Includes
+
+- Task loop delays (`osDelay`, `vTaskDelay`)
+- Periodic sends (ICC, network, UART commands)
+- Staleness/timeout checks
+- Watchdog timers
+- Peripheral command rates (DAC, PWM, motor controllers)
+- Debug print throttles
+- Polling intervals
+
+## Red Flags (Require Log15 Check)
+
+- Adding `osDelay()` or changing loop period
+- Any `HAL_GetTick()` timestamp comparison
+- New ICC send or changed send rate
+- New peripheral command in a loop
+- Adding staleness timeout or watchdog
+- Any "every N ms" or "throttle" logic
+- UART traffic rate changes
+
+## Why This Matters
+
+**Proven timing bugs in this codebase:**
+- **Bug #1 (Log14 Stage 4):** STALE/FRESH flickering — staleness calculated before packet check; independent print throttles showed different states
+- **Bug #2 (Log14 Stage 4):** Pololu ACK/readback FAIL — 2 ms command rate overwhelmed UART-based motor controller; fixed at 20 ms
+
+Timing bugs are **silent** (intermittent, hard to reproduce) and **catastrophic** (lost packets, stalled peripherals, fail-safe triggers).
+
+## Enforcement
+
+When proposing timing-related code changes:
+- **State:** "Checked Log15, no conflicts"
+- **Justify:** Why this rate/timeout was chosen
+- **Document:** Update Log15 with the new constraint
+
+If unsure whether code is timing-sensitive: **assume yes, check Log15**.

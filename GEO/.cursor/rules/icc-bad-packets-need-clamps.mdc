@@ -1,0 +1,49 @@
+---
+description: CRITICAL — CM7→CM4 motor ICC OOR µV; libops ring-wrap pointer; CM4 clamps mandatory
+alwaysApply: true
+---
+
+# ICC bad packets → need clamps (CRITICAL — 2026-07-20)
+
+## Confirmed on bench (do not regress)
+
+CM7 `prepareDACValue` → `motor_command_to_voltage_uv` always yields
+`[400000, 3000000]` µV. **CM4 still sometimes sees OOR**, including **RC idle**
+(should be ~1700 mV mid):
+
+```
+[CM4 MOTOR CLAMP] HI raw=25827 mV -> MID   /* ~25.8 V — impossible from scaler */
+[CM4 MOTOR CLAMP] HI raw=25821 mV -> MID
+[CM4 MOTOR CLAMP] LO raw=0 mV -> MID
+```
+
+## Likely root cause (libops disassembly — keep for later)
+
+`CM4/OPS_Lib/libops.a` → `intercore_comm.o` → `process_rx_buffer`:
+
+1. ICC header bytes read with wrap-safe `next_index` (13-bit / 8 KB).
+2. Payload passed to hook as **one linear pointer** into
+   `buf_CM7_to_CM4_NO_ID` (SRAM4, size `0x2004` = 4 + 8192).
+3. Docs: pointer is in shared SRAM4; read index advances **after** hook returns.
+4. If a packet **straddles the ring end**, tag/len can still look valid but
+   Customer `memcpy` reads past the ring → junk µV (0 / ~25 V). Intermittent;
+   idle still hits when wrap occurs.
+
+**Contributing:** CM4 `Customer_ICC_HandlePacket_NO_ID` may `osMutexAcquire(5 ms)`
++ `memcpy` inside the hook (should stay short) → holds slot longer → higher ring
+fill → more wraps. Does not replace the wrap bug.
+
+**Real fix:** new `libops` (linearize before hook / wrap-safe copy). Customer cannot
+fully fix alone. **Keep OOR→MID clamps.**
+
+## Rule
+
+1. **Keep** CM4 `MotorDac_ClampVoltageUv` — OOR → **MID**, never rail saturate.
+2. Do not trust Customer ICC motor µV just because CM7 clamped.
+3. Clamp prints ≠ stale→mid (stale has no `[CM4 MOTOR CLAMP]` line).
+4. Float `* 1e6f` is not the ~25 V / 0 source.
+
+## Related
+
+- Full write-up: `.cursor/Logs/Log21-ICC-bad-packets-need-clamps.md`
+- Freshness: `icc-freshness-motor-dac.mdc` · Log7 / Log18 / Log19

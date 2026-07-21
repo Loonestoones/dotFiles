@@ -1,0 +1,29 @@
+---
+description: CM7 must not call blocking dac_ctrl every control tick (confirmed 2026-07-17)
+alwaysApply: true
+---
+
+# CM7 DAC / control-tick timing (mandatory)
+
+## Confirmed cause (2026-07-17)
+
+Calling `dac_ctrl` / `WriteMotorDAC` from **CM7** every Customer tick blocks on
+`ICC_SendPacket_WITH_ID` + `ICC_WaitForResponse` (up to 1000 ms). Two channels per
+tick made `GEO_ApplicationTask_Update` run at ~240–400 ms instead of ~5–10 ms.
+
+Bench: DAC on → `[CM7 UPDATE]` ~2400–4000 ms / 10 calls; DAC commented → ~50 ms / 10 calls.
+
+Full plan: `.cursor/Logs/Log18-CM7-DAC-ICC-blocking-tick-fix-plan.md`  
+Timing table: `.cursor/Logs/Log15-System-Timing-Reference.md` §1.1
+
+## Rule
+
+- **Do not** put per-tick motor DAC updates on CM7 via `dac_ctrl` (blocking ICC).
+- **Do** apply DAC on **CM4** (SPI owner); CM7 publishes right/left commands over
+  Customer ICC NO_ID (same pattern as steering → Pololu).
+- Temporary comment-out of `WriteMotorDAC` on CM7 is a diagnostic only — restore via Log18 Stage 1, not by re-enabling blocking CM7 `dac_ctrl` in the hot path.
+
+## Current tree state (2026-07-20)
+
+**Active:** `NewBoard/Rewrite/MFCB_BASE` — motor ICC **v2 µV**: CM7 scales, CM4 clamps +
+local `dac_ctrl` (guideline — see `cm7-process-cm4-io-guideline.mdc`). Peek/RX age 300 ms.

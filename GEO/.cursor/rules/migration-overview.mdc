@@ -1,0 +1,57 @@
+---
+description: OPS_ZF → NewBoard migration goal, phases, and current step
+alwaysApply: true
+---
+
+# Migration: OPS_ZF → NewBoard (MFCB_BASE)
+
+## Goal
+
+Port **OPS_ZF** firmware to **NewBoard** (`NewBoard/MFCB_BASE/`) **incrementally** — one slice at a time, with testing at each step.
+
+**Not** the primary path: a big-bang port of **OldBoard** with all features (VP, NMEA2000, Modbus, etc.). OldBoard stays **reference only** unless the user explicitly asks to pull from it.
+
+## Workspace layout
+
+| Path | Role |
+|------|------|
+| `OPS_ZF/` | **Source of truth for conversion** — ZF engine variant (simpler control path) |
+| `NewBoard/MFCB_BASE/` | **Target platform** (dual-core CM4/CM7, OPS library + `Customer/`) |
+| `OldBoard/` | Legacy superset — compare or clarify only; not the default port source |
+| `Logs/CodeLayouts.md` | Human notes on folder layout |
+
+## Phases (strict order)
+
+1. **Understand OPS_ZF** — done enough to port slices
+2. **Map NewBoard** — knowledge graph in `newboard-knowledge-graph.mdc` (ongoing reference)
+3. **Convert OPS_ZF → NewBoard** ← **CURRENT STEP** — on **linked CURRENT firmware** (see `current-build-porting-strategy.mdc`)
+
+Newer OPS build (`Newer_build_includes/`) is **preview only** until new `libops.a` arrives; code and plans must stay easy to upgrade (adapters, EEPROM-first, no newer-only includes in shippable code).
+
+## Phase 1 focus (OPS_ZF)
+
+- Boot flow: `main.c` → FreeRTOS → `ops_application_task_impl()`
+- Control path: SBUS (RC) vs ethernet (ROC), state machine, DAC outputs (ZF engine)
+- Supporting code: `Dekimo_HAL/`, `ops-tools.c`, `ops-ethernet.c`, `debug.c`
+- Use OldBoard only when it clarifies OPS_ZF behaviour
+
+## Phase 2 focus (NewBoard knowledge map) — next, not started
+
+- Build a structured map of NewBoard: OPS APIs, boot order, `Customer/` hooks, ICC, peripherals
+- Knowledge graph / documentation approach to be defined with the user **before** porting
+- Outcome: clear mapping from each OPS_ZF behaviour to NewBoard APIs and files
+
+## Phase 3 focus (incremental convert) — active
+
+- Port **one OPS_ZF slice at a time** on **CURRENT** NewBoard firmware (boot loop, UART/SBUS path, ROC/UDP, state machine, DAC)
+- **Test on hardware** before the next slice
+- Target: `Customer/` + CURRENT OPS APIs; design for NEWER swap per `current-build-porting-strategy.mdc`
+- NewBoard-specific rules: `NewBoard/MFCB_BASE/.cursor/rules/`
+
+## How to work in this workspace
+
+- **Follow supplier docs** — see rule `follow-supplier-how-to-use.mdc` (`NewBoard/MFCB_BASE/how_to_use_*.txt`)
+- **Read and explain first** — help the user understand code before changing it
+- **Ask before any file create/edit** — see rule `ask-before-edits.mdc`
+- Prefer walking through files over bulk refactors during phases 1–2
+- When converting, prefer **smallest testable diff** over feature-complete ports

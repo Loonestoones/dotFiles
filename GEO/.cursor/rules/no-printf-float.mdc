@@ -1,0 +1,26 @@
+---
+description: Never use %f / float printf on NewBoard firmware (newlib float not linked)
+alwaysApply: true
+---
+
+# No float formatting in printf/snprintf (mandatory)
+
+STM32 newlib-nano builds here do **not** link float printf (`-u _printf_float` is off).
+
+## Do not use
+
+- `%f`, `%g`, `%e`, `%.2f`, etc. in `printf` / `snprintf` / `sprintf`
+- Casting to `double` only to print a float
+
+## Do instead
+
+- Print **integers**: millivolts, microvolts, scaled fixed-point (`mv`, `uv`, `x100`)
+- Example: `mV~%lu` from `(uint32_t)(volts * 1000.0f + 0.5f)` — float **math** is fine; float **format** is not
+
+## If linker warns
+
+```
+The float formatting support is not enabled … add "-u _printf_float"
+```
+
+→ Fix the format string. Do **not** enable `_printf_float` unless the user explicitly asks.

@@ -1,0 +1,16 @@
+---
+description: Before any Customer ICC send/tag change, read Log19 inventory + both cust_icc.h
+alwaysApply: true
+---
+
+# Customer ICC — check inventory first
+
+Before adding, changing, or proposing any send/receive on `IC_CH_CUSTOMER`:
+
+1. Read `.cursor/Logs/Log19-Customer-ICC-traffic-inventory.md` (tag registry, payloads, rates, storage rules)
+2. Read **both** `CM4/Customer/Inc/cust_icc.h` and `CM7/Customer/Inc/cust_icc.h` (must match)
+3. Confirm receiver has a **per-tag** latest-value slot (CM4 must not overwrite steer with motor)
+4. Update Log19 + Log15 when the wire format or rate changes
+
+Cyclic commands → NO_ID + tag. One-shot ack events → WITH_ID (Log7).  
+Never put blocking CM7 `dac_ctrl` in the control tick (Log18).

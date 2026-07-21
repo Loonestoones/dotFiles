@@ -1,0 +1,38 @@
+---
+description: CM4 linker undefined Customer* — check .cproject sourceEntries
+alwaysApply: true
+---
+
+# CM4 Customer folder must be in CubeIDE sourceEntries
+
+## Symptom (seen 2026-07-17, had happened before)
+
+CM4 link fails with undefined references + ARM/Thumb relocation noise:
+
+- `CustomerTask_Init`
+- `Customer_ICC_HandlePacket_NO_ID`
+- `Customer_ICC_HandlePacket_WITH_ID`
+
+Include path can still show `Customer/` — that is **not** enough.
+
+## Cause
+
+`CMx/.cproject` → configuration → `sourceEntries` is missing:
+
+```xml
+<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Customer"/>
+```
+
+Then `Debug/sources.mk` has no `Customer/` subdirs and `Customer.c` never compiles.
+
+## Fix
+
+1. Add `Customer` to `sourceEntries` for **both** Debug and Release (match CM7 / working CM4).
+2. CubeIDE: refresh project → Clean → Build CM4.
+3. Confirm `Debug/Customer/` objects appear and those symbols resolve.
+
+## Check first
+
+When diagnosing CM4 Customer undefined refs, open `.cproject` `sourceEntries` **before** rewriting Customer code.
+
+Tree: `NewBoard/Rewrite/MFCB_BASE/` (and any copy of MFCB_BASE). Detail: `.cursor/Logs/Log20-CM4-Customer-sourceEntries-missing.md`

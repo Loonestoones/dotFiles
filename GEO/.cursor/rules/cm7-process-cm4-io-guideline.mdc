@@ -1,0 +1,21 @@
+---
+description: Guideline — prefer CM7 product processing, CM4 IO (not a hard rule)
+alwaysApply: true
+---
+
+# CM7 process / CM4 IO — guideline only
+
+**Not a hard rule.** Prefer when it fits; override when timing, ownership, or OPS APIs say otherwise.
+
+## Preference
+
+- **CM7:** product logic, state machine, µs→plant scaling (`prepareDACValue`), ROC/RC merge
+- **CM4:** local HAL/SPI/UART IO (`dac_ctrl`, Pololu, SBUS RX), failsafe clamp, stale→safe
+
+Motor DAC today: CM7 sends µV on Customer ICC; CM4 `MotorDac_ClampVoltageUv` + `dac_ctrl`.
+
+## Still allowed
+
+- CM4-side math when simpler or safer (e.g. interim adapters)
+- CM7 calling OPS APIs that ICC to CM4 when not on the hot path
+- Hard rule remains: **no per-tick blocking `dac_ctrl` on CM7** (see `cm7-dac-icc-blocking.mdc`)

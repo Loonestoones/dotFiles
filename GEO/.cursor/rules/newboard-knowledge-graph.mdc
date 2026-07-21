@@ -1,0 +1,279 @@
+---
+description: NewBoard MFCB_BASE knowledge graph — layout, OPS APIs, current vs newer build headers
+alwaysApply: true
+---
+
+# NewBoard knowledge graph (MFCB_BASE)
+
+Reference for OPS_ZF → NewBoard migration. **Headers only** in workspace for OPS (precompiled `libops.a`); behaviour lives in `.c` inside the library.
+
+## Header sources (read this first)
+
+| Label | Path | Role |
+|-------|------|------|
+| **CURRENT** | `NewBoard/MFCB_BASE/CM7/OPS_Lib/include/` (mirrored on CM4) | Matches **linked firmware today** (174 public `.h` files) |
+| **NEWER** | `NewBoard/Newer_build_includes/include/` | **Incoming build** — not linked yet (205 `.h` files) |
+
+When mapping OPS_ZF features, prefer **NEWER** APIs if they exist (SBUS, FDCAN task, crypto). Code against CURRENT until the new `libops.a` arrives.
+
+## ⚠️ CRITICAL — check the OPS function inventory FIRST
+
+**Before designing any workaround for OPS/libops behaviour, search
+`.cursor/Logs/Log6-OPS-function-inventory.md`** — every public OPS function (832, CM4 vs CM7
+availability marked, briefs included, cross-checked against both `libops.a` binaries).
+The library almost certainly already has the function you need.
+Proven example: a full day lost working around the OPS UART RX task stealing UART6 for SBUS —
+the fix was the pre-existing `UART_Task_StopPort(6)`. The inventory also lists customer-overridable
+hooks (e.g. `UART_Task_OnFrame`) and lib-internal symbols you must not collide with
+(e.g. `HAL_UART_RxCpltCallback` is already defined inside CM4 libops.a).
+
+---
+
+## Physical layout
+
+```
+NewBoard/MFCB_BASE/
+├── CM4/                          Cortex-M4 project
+│   ├── Core/                     Cube HAL, main.c, StartInitTask, IRQs
+│   ├── Customer/                 Product code (StartCustomerTask)
+│   ├── OPS_Lib/                  libops.a + include/  ← CURRENT headers
+│   └── TempOPS/                  Build sync copy — do not edit
+├── CM7/                          Cortex-M7 project (same shape + USB, FATFS, MBEDTLS, LIBJPEG)
+│   ├── Core/
+│   ├── Customer/
+│   └── OPS_Lib/
+├── Middlewares/                  FreeRTOS, LwIP (Cube)
+├── how_to_use_*.txt              Programmer docs (layers, settings, network, …)
+└── .cursor/rules/                NewBoard-specific coding rules
+
+NewBoard/Newer_build_includes/include/   ← NEWER headers (preview only)
+```
+
+---
+
+## Layer model (who edits what)
+
+```mermaid
+flowchart TB
+  subgraph cube [CMx/Core — Cube]
+    HAL[HAL / IRQ / StartInitTask]
+    DBG[main.h debug flags]
+  end
+  subgraph cust [CMx/Customer — YOU]
+    CT[CustomerTask_Init / StartCustomerTask]
+    CE[customer_examples optional]
+    ICCc[IC_CH_CUSTOMER handlers]
+  end
+  subgraph ops [OPS — platform lib]
+    INIT[init/ ops_init_platform + ops_init_application]
+    SET[Settings/ EEPROM blocks]
+    PER[peripherals/ core-neutral APIs]
+    DEV[devices/ external ICs]
+    MW[Middleware/ web network filters SBUS…]
+    LWIP[LWIP/ ethernetif]
+  end
+  HAL --> INIT
+  INIT --> CT
+  CT --> PER
+  CT --> DEV
+  CT --> SET
+  CT --> MW
+  PER <-->|ICC SRAM4| PER
+```
+
+| Layer | Path | Responsibility |
+|-------|------|----------------|
+| Core | `CMx/Core/` | STM32 Cube, early HSEM boot, `StartInitTask`, task creation |
+| Customer | `CMx/Customer/` | Product logic, state machines, custom protocols |
+| OPS | `OPS_Lib/` (binary) + headers | Settings, drivers, init, web, network |
+| TempOPS | `CMx/TempOPS/` | Build mirror — never edit |
+
+---
+
+## Boot sequence (both cores)
+
+```mermaid
+sequenceDiagram
+  participant M as main.c
+  participant RT as FreeRTOS
+  participant I as StartInitTask
+  participant OPS as ops_init_*
+  participant C as CustomerTask
+
+  M->>M: HAL_Init, dual-core HSEM
+  M->>RT: osKernelStart
+  RT->>I: StartInitTask
+  I->>OPS: ops_init_platform()
+  Note over OPS: CM4 I2C EEPROM UART ADC PWM DAC FDCAN<br/>CM7 ICC LwIP KSZ WebServer
+  I->>OPS: ops_init_application()
+  Note over OPS: EEPROM app role Drone Cranesystem …
+  I->>C: CustomerTask_Init()
+  C->>C: StartCustomerTask loop
+```
+
+Public init API: `init/ops_init.h` — **only** `ops_init_platform()` + `ops_init_application()` from Core.
+
+Application roles (`Settings/application_type.h`): `UNDEFINED`, `CRANESYSTEM`, `DRONE`, `SILAS`, `RHEOTUNE`. Drone init stub: `init/application/Drone/ops_app_drone_init.h`.
+
+---
+
+## Dual-core rule (mandatory)
+
+- **CM4 owns** real-time HAL: UART, I2C, ADC, PWM, FDCAN, SPI2/4, DAC chip, EEPROM, RS-485.
+- **CM7 owns** LwIP, web server, USB, SD, QSPI, KSZ9897 (SPI5), crypto accelerators.
+- **Callers use one API on both cores** — module `.c` picks HAL vs ICC (`adc_read_raw`, `DAC_OutputVoltage`, `pwm_in_ctrl`, `I2C_ReadByte`, …).
+- **Never** `#if CORE_CM4` around peripheral calls in Customer code.
+- **ICC** (`peripherals/inter_core_communication/intercore_comm.h`): SRAM4 rings, `ic_channel_t` per bus (`IC_CH_ADC`, `IC_CH_PWM`, `IC_CH_NETWORK`, `IC_CH_CUSTOMER`, …).
+
+---
+
+## Umbrella includes (Customer starting point)
+
+From `CM7/Customer/Customer.h`:
+
+| Umbrella | Pulls in |
+|----------|----------|
+| `peripherals/peripherals.h` | UART, I2C, SPI, GPIO, ADC, PWM, ICC, pins |
+| `Settings/settings.h` | All EEPROM blocks, `settings_load_raw` / `save` |
+| `devices/devices.h` | M24M01, KSZ9897, DAC084S085, LTC2870, AT24MAC402 |
+| `Middleware/Middlewares.h` | Web, network, filters, mutex, watchdog, Cranesystem TX |
+
+Prefer **narrow includes** when only one module is needed.
+
+---
+
+## OPS module graph (CURRENT build)
+
+```mermaid
+flowchart LR
+  subgraph settings [Settings]
+    SI[settings.h blocks]
+    APP[Applications/ Drone Cranesystem …]
+  end
+  subgraph periph [peripherals]
+    UART[uart_function uart_task]
+    I2C[i2c_function]
+    ADC[adc_functions]
+    PWM[pwm_functions pwm_in/out_ctrl]
+    ICC[intercore_comm]
+    GPIO[gpio_functions]
+  end
+  subgraph devices [devices]
+    DAC[dac_ctrl]
+    EEPROM[M24M01]
+    SW[KSZ9897]
+    RS485[LTC2870]
+  end
+  subgraph mw [Middleware CURRENT]
+    WEB[Website Webserver]
+    NET[network_functions]
+    NCMD[network_commands]
+    FILT[Filters]
+    WDG[Watchdog]
+    CRANE[Cranesystem TX]
+  end
+  subgraph init [init]
+    PLAT[ops_init_platform]
+    APPL[ops_init_application]
+  end
+  PLAT --> periph
+  PLAT --> devices
+  PLAT --> mw
+  APPL --> APP
+  settings --> periph
+  NET --> ICC
+  DAC --> ICC
+  ADC --> ICC
+  PWM --> ICC
+```
+
+### Settings blocks (representative)
+
+`device_info`, `uart*`, `i2c*`, `fdcan`, `ain`, `adc`, `dac`, `pwm_in/out`, `network`, `ip_channel`, `gpio`, `website`, `watchdog`, … + `Applications/<Product>/` tails.
+
+Load pattern: `settings_load_raw(PRIMARY_SETTINGS, BLOCK_*, raw, size)` → `*_unpack` → use struct → `*_pack` → `settings_save_raw`. Apply hardware via ctrl APIs (`pwm_in_ctrl`, `dac_ctrl`, …).
+
+---
+
+## NEWER build delta (+31 headers, −3 removed)
+
+### Added in NEWER (not in CURRENT linked headers)
+
+| Area | Headers | Relevance to OPS_ZF migration |
+|------|---------|-------------------------------|
+| **SBUS** | `Middleware/SBUS/sbus_functions.h`, `sbus_task.h`, `sbus_shared_memory.h`, `sbus_functions_icc.h` | **Primary** — replaces raw UART6 SBUS in OPS_ZF; app uses `sbus_translator_ctrl`, `sbus_shared_read` |
+| **SBUS settings** | `Settings/sbus_translator_config.h` (+ included from `settings.h`) | EEPROM + web for translator instances 1–3 |
+| **FDCAN task** | `peripherals/FDCAN/fdcan.h`, `fdcan_function.h`, `fdcan_task.h`, `fdcan_task_icc.h` | CAN RX task + subscribers; TX via `fdcan_send_ctrl` |
+| **Modbus RTU** | `Middleware/MODBUS/modbus_rtu.h` | ADU builder; send via `UART_SEND_OP_MODBUS_RTU_FRAME` |
+| **Network crypto** | `Middleware/Network/network_crypto.h` + `encyptie/*` | IP-channel seal/open (AES/HMAC); CM7 `encyptie_init` |
+| **Website Drone** | `Pages_Module/Applications/Drone/Page_drone_*.h` (3 pages) | Web UI for drone app/settings |
+| **Website extras** | `Page_sbus_translator.h`, `Page_i2c.h`, `Page_spi.h`, `website_customer_icc*.h` | SBUS/I2C/SPI config pages; customer ICC web hook |
+| **HTTP handlers** | `Request_Handlers/get_handler.h`, `post_handler.h`, `options_handler.h` | Split request routing (refactor) |
+| **UART ICC** | `peripherals/uart/uart_task_icc.h` | ICC side of UART proxy (internal) |
+
+### Removed / replaced in NEWER
+
+| CURRENT only | Notes |
+|--------------|-------|
+| `Middleware/Network/network_commands.h` | NMEA2000/audio/system command enums — **dropped from Middlewares.h umbrella** in NEWER |
+| `peripherals/uart/uart_rx_parse.h` | UART RX parsing — likely internalized |
+| `peripherals/uart/uart_rx_shared.h` | UART shared RX — likely internalized |
+
+### Umbrella changes
+
+**CURRENT `Middlewares.h`:** Web + `network_functions` + **`network_commands`** + Filters + Mutex + Watchdog + Cranesystem.
+
+**NEWER `Middlewares.h`:** Web + `network_functions` (no commands) + Filters + Mutex + Watchdog + Cranesystem + **`SBUS/sbus_functions`** + **`MODBUS/modbus_rtu`**.
+
+**NEWER `peripherals.h`:** adds **Modbus RTU**, **FDCAN** stack, **Timer** on both cores (CURRENT: Timer CM4-only `#if`).
+
+---
+
+## UART1 / UART6 / UART7 allocation (CURRENT porting, 2026-07-06)
+
+Full bench log: `.cursor/Logs/Log2-SBUS-config-path-NewBoard.md`.
+
+| Port | Role | Voltage |
+|------|------|---------|
+| **UART1** | **Debug** — CM4 + CM7 (`CM4/CM7_INIT_DEBUG_UART`, Customer UART) | 3.3 V @ 115200 (no `UART_SetVoltage` API) |
+| **UART6** | **SBUS RC RX** — OPS_ZF / NEWER inst1 | 3.3 V now → **`SUPPLY_VOLTAGE_5V`** + `UART_SetVoltage(&huart6, …)` when needed |
+| **UART7** | **SBUS TX mirror** | 3.3 V now → **`SUPPLY_VOLTAGE_5V`** + `UART_SetVoltage(&huart7, …)` when needed |
+
+Override supplier defaults (debug was UART7 CM4 / UART6 CM7). **5 V:** change `RC_SBUS_RX_VOLTAGE` / `RC_SBUS_TX_VOLTAGE` in `rc_sbus_config.h` + matching `UART_SetVoltage` calls — **UART6/7 only**.
+
+**HAL:** CM4 owns UART HAL. SBUS init in CM4 Customer only; CM7 debug on UART1 goes ICC → CM4.
+
+**CURRENT SBUS:** Hardcode `uart_config_t` + Phase 2 explicit **100000 Hz**; web lacks 100k baud.
+
+**Debug probe:** One cable on **UART1** @ 115200; flash both cores.
+
+---
+
+## OPS_ZF → NewBoard mapping (preview)
+
+| OPS_ZF | NewBoard target | Build |
+|--------|-----------------|-------|
+| `UART6_Init4SBUS` / `ProcessRC` | CM4 hardcoded SBUS `uart_config_t` on UART6 + interim `rc_input_*` (**CURRENT**) | `sbus_translator_ctrl` + `sbus_shared_read` (**NEWER**) |
+| `init_udp_control_channel` / ROC | `network_functions.h` (`network_send`, IP channels) | CURRENT |
+| Ethernet timeout → stop | Customer state machine + `network_rx_*` | CURRENT |
+| `prepareDACValue` / `DAC_SetCHANNELValue` | `devices/.../dac.h` → `DAC_OutputVoltage` | CURRENT |
+| Sailing state machine (RC/ROC/AP) | `CM7/Customer/StartCustomerTask` (and/or CM4) | Customer |
+| Master/slave heartbeat | TBD — watchdog ICC or custom `IC_CH_CUSTOMER` | — |
+| `Dekimo_HAL/` | Replaced by OPS peripherals + devices | — |
+
+---
+
+## Key doc files (MFCB_BASE root)
+
+- `how_to_use_project_layers.txt` — layer map
+- `how_to_use_customer_folder.txt` — Customer boot + ICC
+- `how_to_use_core_assignment.txt` — CM4 vs CM7 ownership table
+- `how_to_use_settings_mechanism.txt` — EEPROM
+- `how_to_use_peripherals_and_devices_mechanism.txt` — API usage
+- `how_to_use_network_mechanism.txt` — LwIP, IP channels
+
+NewBoard rules: `NewBoard/MFCB_BASE/.cursor/rules/` (core-transparent API, OPS-only source of truth, no Python).
+
+**Mandatory:** follow `NewBoard/MFCB_BASE/how_to_use_*.txt` — see `.cursor/rules/follow-supplier-how-to-use.mdc`.
+
+**Hardware manual (on demand):** `.cursor/Logs/reference-OPS-MFCB-hardware-manual-rev2.01.md` ← summary of `NewBoard/OPS-MFCB Hardware manual rev2.01.pdf`.

@@ -1,0 +1,30 @@
+---
+description: MANDATORY — follow NewBoard supplier how_to_use_* docs for MFCB work
+alwaysApply: true
+---
+
+# Follow supplier how_to_use documentation (MANDATORY)
+
+For any work on **NewBoard** (`NewBoard/MFCB_BASE/`), **Customer/** code, OPS APIs, settings, peripherals, network, or dual-core behaviour:
+
+1. **Read and follow** the matching supplier doc(s) under `NewBoard/MFCB_BASE/how_to_use_*.txt` **before** proposing or implementing changes.
+2. If guidance in chat, assumptions, or OPS headers **conflicts** with a how_to_use file, **the how_to_use file wins** unless the user explicitly overrides.
+3. When answering or porting, **cite or align** with the relevant doc (e.g. boot order from `how_to_use_customer_folder.txt`, CM4/CM7 ownership from `how_to_use_core_assignment.txt`).
+
+## Supplier docs (MFCB_BASE project root)
+
+| File | Use when |
+|------|----------|
+| `how_to_use_project_layers.txt` | Where Core / Customer / OPS / TempOPS live; who edits what |
+| `how_to_use_customer_folder.txt` | Customer task, boot order, ICC, includes, checklist |
+| `how_to_use_core_assignment.txt` | CM4 vs CM7 HAL ownership, init, ICC policy |
+| `how_to_use_settings_mechanism.txt` | EEPROM blocks, PRIMARY/BACKUP, pack/unpack |
+| `how_to_use_peripherals_and_devices_mechanism.txt` | STM peripherals vs external devices; which API |
+| `how_to_use_network_mechanism.txt` | LwIP, IP channels, `network_send`, web/network setup |
+| `how_to_use_debug_mechanism.txt` | UART trace flags in `main.h`, compile-time debug |
+
+Also respect **NewBoard-specific Cursor rules**: `NewBoard/MFCB_BASE/.cursor/rules/` (core-transparent API, OPS-only source of truth, etc.).
+
+## OPS_ZF / OldBoard
+
+Supplier how_to_use applies to **NewBoard target behaviour only**. Use OPS_ZF/OldBoard as **source behaviour**, not as a substitute for supplier layering rules on MFCB.
