@@ -1,0 +1,3 @@
+- [NewBoard firmware version](project_newboard_firmware_version.md) — Kevin's board runs OLD firmware; Newer_build_includes tree is not relevant to current work
+- [CAN/NMEA2000 deprioritized](project_can_nmea2000_deprioritized.md) — CAN slice moved to lowest priority in the NewBoard port backlog (2026-07-15); don't propose resuming it unless asked
+- [AP_IMS PWM IN bench-verified](project_ap_ims_pwm_in_bench_verified.md) — SBUS pass-through + AP_IMS PWM IN capture (Rising edge) confirmed on hardware (2026-07-15); see Log13
